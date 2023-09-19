@@ -11,6 +11,46 @@ ImageKit Angular SDK allows you to resize, optimize, deliver, and upload images 
 
 ImageKit is complete media storage, optimization, and transformation solution that comes with an image and video CDN. It can be integrated with your existing infrastructure - storage like AWS S3, web servers, your CDN, and custom domain names, allowing you to deliver optimized images in minutes with minimal code changes.
 
+## Changelog - SDK Version 3.0.0
+### Breaking changes
+**1. Authentication Process Update:**
+* Previously, when using this SDK, we had to pass `authenticationEndpoint` which is used by SDK internally for fetching security parameters i.e `signature`, `token`, and `expire`.
+* In version 3.0.0, we have deprecated the use of the `authenticationEndpoint` parameter. Instead, the SDK now introduces a new parameter named `authenticator`. This parameter expects an asynchronous function that resolves with an object containing the necessary security parameters i.e `signature`, `token`, and `expire`.
+
+Example implementation for `authenticator` using `Fetch API`.
+
+``` javascript
+
+authenticator = async () => {
+    try {
+
+        // You can pass headers as well and later validate the request source in the backend, or you can use headers for any other use case.
+        const headers = {
+          'Authorization': 'Bearer your-access-token',
+          'CustomHeader': 'CustomValue'
+        };
+
+        const response = await fetch('server_endpoint', {
+            headers
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Request failed with status ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const { signature, expire, token } = data;
+        return { signature, expire, token };
+    } catch (error) {
+        throw new Error(`Authentication request failed: ${error.message}`);
+    }
+};
+```
+
+*Note*: Avoid generating security parameters on the client side. Always send a request to your backend to retrieve security parameters, as the generation of these parameters necessitates the use of your Imagekit `privateKey`, which must not be included in client-side code.
+
+
 ## Installation
 
 ```shell
@@ -45,7 +85,6 @@ To use the SDK, you need to provide it with a few configuration parameters. The 
     ImagekitioAngularModule.forRoot({
       publicKey: environment.publicKey,
       urlEndpoint: environment.urlEndpoint,
-      authenticationEndpoint: environment.authenticationEndpoint
     })
   ],
   providers: [],
@@ -54,7 +93,7 @@ To use the SDK, you need to provide it with a few configuration parameters. The 
 ```
 
 * `urlEndpoint` is required to use the SDK. You can get URL-endpoint from your ImageKit dashboard - https://imagekit.io/dashboard/url-endpoints.
-* `publicKey` and `authenticationEndpoint` parameters are required if you want to use the SDK for client-side file upload. You can get `publicKey` from the developer section in your ImageKit dashboard - https://imagekit.io/dashboard/developer/api-keys.
+* `publicKey` and `authenticator` parameters are required if you want to use the SDK for client-side file upload. You can get `publicKey` from the developer section in your ImageKit dashboard - https://imagekit.io/dashboard/developer/api-keys.
 * `transformationPosition` is optional. The default value for the parameter is `path`. Acceptable values are `path` & `query`
 
 > Note: Do not include your [private key](https://docs.imagekit.io/api-reference/api-introduction/api-keys#private-key) in any client-side code.
@@ -436,9 +475,9 @@ The SDK provides a component to upload files to the [ImageKit Media Library](htt
 | onError   | Function callback | Optional. EventEmitter. Called if the upload results in error. The first and only argument is the error received from the upload API |
 | urlEndpoint      | String | Optional. For example, https://ik.imagekit.io/your_imagekit_id/endpoint/ |
 | publicKey      | String | Optional |
-| authenticationEndpoint      | String | Optional |
+| authenticator      | ()=>Promise<{signature:string,token:string,expiry:number}> | Optional |
 
-Note: All three `urlEndpoint`, `publicKey` and `authenticationEndpoint` must be present in the attribute for them to take effect. Otherwise, the SDK will fall back to the values specified in `app.module.ts`.
+Note: All three `urlEndpoint` and `publicKey`  must be present in the attribute for them to take effect. Otherwise, the SDK will fall back to the values specified in `app.module.ts`.
 
 Sample usage
 
@@ -515,17 +554,15 @@ import { ImagekitService } from 'imagekitio-angular';
 // Initializing the service with configuration
 service = new ImagekitService({
   urlEndpoint: "https://ik.imagekit.io/your_imagekit_id/endpoint/",
-    publicKey: "your_public_key",
-    authenticationEndpoint: "your_authentication_endpoint"
+  publicKey: "your_public_key",
 });
 
 // Generating URL
-// Note: You can choose to override the publicKey and authenticationEndpoint if necessary
+// Note: You can choose to override the publicKey if necessary
 const url = this.service.ikInstance.url({
   path: "/default-image.jpg",
   urlEndpoint: "https://ik.imagekit.io/your_imagekit_id/endpoint/",
   publicKey: "your_overriding_public_key_if_needed",
-  authenticationEndpoint: "your_overriding_authentication_endpoint_if_needed"
 });
 
 ```

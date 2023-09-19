@@ -9,17 +9,35 @@ describe("IkUploadComponent", () => {
   let imageKitConfiguration: ImageKitConfiguration;
   let fixture: ComponentFixture<IkUploadComponent>;
 
-  beforeEach(async() => {
+  const authenticator = async () => {
+    try {
+
+      // You can pass headers as well and later validate the request source in the backend, or you can use headers for any other use case.
+      const response = await fetch('http://localhost:3000/auth');
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Request failed with status ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const { signature, expire, token } = data;
+      return { signature, expire, token };
+    } catch (error) {
+      throw new Error(`Authentication request failed: ${error.message}`);
+    }
+  };
+
+  beforeEach(async () => {
     imageKitConfiguration = {
       urlEndpoint: "url",
       publicKey: "pub",
-      authenticationEndpoint: "auth"
     };
     TestBed.configureTestingModule({
       declarations: [IkUploadComponent],
-      providers: [ 
-        {provide: ImagekitService, useValue: imageKitService},
-        {provide: ImageKitConfiguration, useValue: imageKitConfiguration}
+      providers: [
+        { provide: ImagekitService, useValue: imageKitService },
+        { provide: ImageKitConfiguration, useValue: imageKitConfiguration }
       ]
     }).compileComponents();
     fixture = TestBed.createComponent(IkUploadComponent);
@@ -104,8 +122,8 @@ describe("IkUploadComponent", () => {
       fileName: newFileName,
       tags: ["tag"]
     };
-    
-    expect(JSON.stringify(actual.tags)).toEqual(JSON.stringify(expected.tags));
+
+    expect(JSON.stringify(actual['tags'])).toEqual(JSON.stringify(expected.tags));
   });
 
   it("getUploadParams removes folder if not defined", () => {
@@ -237,7 +255,7 @@ describe("IkUploadComponent", () => {
       fileName: newFileName,
       responseFields: ["metadata"]
     };
-    expect(JSON.stringify(actual.responseFields)).toEqual(JSON.stringify(expected.responseFields));
+    expect(JSON.stringify(actual['responseFields'])).toEqual(JSON.stringify(expected.responseFields));
   });
 
   it("getUploadParams removes customMetadata if not defined", () => {
@@ -262,15 +280,15 @@ describe("IkUploadComponent", () => {
     let options: IkUploadComponentOptions = {
       file: dummyFile,
       fileName: newFileName,
-      customMetadata: {"name": "remove-bg","options": {"add_shadow": true}}
+      customMetadata: { "name": "remove-bg", "options": { "add_shadow": true } }
     }
     const actual = component.getUploadParams(options);
     const expected = {
       file: dummyFile,
       fileName: newFileName,
-      customMetadata: {"name": "remove-bg","options": {"add_shadow": true}}
+      customMetadata: { "name": "remove-bg", "options": { "add_shadow": true } }
     };
-    expect(JSON.stringify(actual.customMetadata)).toEqual(JSON.stringify(expected.customMetadata));
+    expect(JSON.stringify(actual['customMetadata'])).toEqual(JSON.stringify(expected.customMetadata));
   });
 
   it("getUploadParams removes extensions if not defined", () => {
@@ -295,15 +313,15 @@ describe("IkUploadComponent", () => {
     let options: IkUploadComponentOptions = {
       file: dummyFile,
       fileName: newFileName,
-      extensions: [{"name": "remove-bg","options": {"add_shadow": true}}]
+      extensions: [{ "name": "remove-bg", "options": { "add_shadow": true } }]
     }
     const actual = component.getUploadParams(options);
     const expected = {
       file: dummyFile,
       fileName: newFileName,
-      extensions: [{"name": "remove-bg","options": {"add_shadow": true}}]
+      extensions: [{ "name": "remove-bg", "options": { "add_shadow": true } }]
     };
-    expect(JSON.stringify(actual.extensions)).toEqual(JSON.stringify(expected.extensions));
+    expect(JSON.stringify(actual['extensions'])).toEqual(JSON.stringify(expected.extensions));
   });
 
   it("getUploadParams removes webhookUrl if not defined", () => {
@@ -466,17 +484,19 @@ describe("IkUploadComponent", () => {
     const expected = {
       file: dummyFile,
       fileName: newFileName,
-      overwriteCustomMetadata: false
+      overwriteCustomMetadata: false,
     };
     expect(actual).toEqual(expected);
   });
 
   it("upload file should not commence if validate file fails", () => {
     component.fileName = 'dummy-file-name';
+    component.authenticator = authenticator;
     // Failed validation
     component.validateFile = () => {
       return false;
     };
+
     fixture.detectChanges();
     const startIkUploadFunction = spyOn(component, 'startIkUpload');
     const input = fixture.nativeElement.children[0];
@@ -487,7 +507,7 @@ describe("IkUploadComponent", () => {
     component.validateFile = () => {
       return true;
     };
-    
+
     input.dispatchEvent(new Event('change'));
     fixture.detectChanges();
     expect(startIkUploadFunction).toHaveBeenCalled();
@@ -499,19 +519,36 @@ describe("IkUploadComponent", () => {
     expect(startIkUploadFunction).toHaveBeenCalled();
   });
 
-  it("onError event emitter called when upload fails", () => {
-    component.fileName = 'dummy-file-name';
+  it("upload file should not commence if authenticator function not passed or validation fails", () => {
+    const startIkUploadFunction = spyOn(component, 'startIkUpload');
+
+    //  Authenticator not a function
+    component.authenticator = undefined;
     fixture.detectChanges();
-    const onErrorEventEmitter = spyOn(component.onError, 'emit');
+    expect(startIkUploadFunction).not.toHaveBeenCalled();
+
+    // Authenticator function does not return a promise
+    component.authenticator = () => undefined
+    fixture.detectChanges();
+    expect(startIkUploadFunction).not.toHaveBeenCalled();
+  });
+
+  it("onError event emitter called when upload fails", async () => {
+    component.fileName = 'dummy-file-name';
+    component.authenticator = authenticator;
+    fixture.detectChanges();
+    const onErrorEventEmitter = spyOn(component.onError, 'emit').and.callThrough();
     const input = fixture.nativeElement.children[0];
     input.dispatchEvent(new Event('change'));
     fixture.detectChanges();
+    await fixture.whenStable();
     expect(onErrorEventEmitter).toHaveBeenCalled();
   });
 
   it("onSuccess event emitter called when when upload succeeds", () => {
     let dummyFile: File = new File([""], "dummy-file-name");
     component.fileName = dummyFile.name;
+    component.authenticator = authenticator;
     fixture.detectChanges();
     const onSuccessEventEmitter = spyOn(component.onSuccess, 'emit');
     const xhr = new XMLHttpRequest();
@@ -519,7 +556,7 @@ describe("IkUploadComponent", () => {
     const options: IkUploadComponentOptions = {
       file: dummyFile,
       fileName: 'dummyFile',
-      onSuccess: component.onSuccess
+      onSuccess: component.onSuccess,
     }
     component.handleUploadResponse(undefined, 'success', options, xhr, progressCb);
     expect(onSuccessEventEmitter).toHaveBeenCalled();
@@ -527,6 +564,7 @@ describe("IkUploadComponent", () => {
 
   it("onUploadStart function called when when upload commences", () => {
     component.fileName = 'dummy-file-name';
+    component.authenticator = authenticator;
     let hasUploadStarted = false;
     component.onUploadStart = () => { hasUploadStarted = true; }
     fixture.detectChanges();
@@ -538,6 +576,7 @@ describe("IkUploadComponent", () => {
 
   it("onUploadProgress callback should be called if is define", () => {
     const comp = fixture.componentInstance;
+    component.authenticator = authenticator;
     let dummyFile: File = new File([""], "dummy-file-name");
     comp.fileName = dummyFile.name;
     let hasTrackedProgress = false;
@@ -545,7 +584,7 @@ describe("IkUploadComponent", () => {
       hasTrackedProgress = true;
     }
     const xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener = jasmine.createSpy('addEventListener').and.callFake((e, callback)=>{
+    xhr.upload.addEventListener = jasmine.createSpy('addEventListener').and.callFake((e, callback) => {
       callback();
     });
 
